@@ -27,6 +27,9 @@ class EditDataDialog:
         self.headers = [field["label"] for field in self.field_definitions]
         self.initial_rows = [list(row) for row in rows]
         self.mode = mode
+        self.numeric_popup = (
+            module_name == "Crack Geom Material" and mode == "new"
+        )
         self.on_save = on_save
         self.on_close = on_close
         self.header_groups = tuple(header_groups or ())
@@ -342,6 +345,8 @@ class EditDataDialog:
                     bg=GROUP_HEADER if not is_empty else GROUP_HEADER_EMPTY,
                     padx=1,
                     pady=1,
+                    highlightbackground=ENTERPRISE_BORDER,
+                    highlightthickness=1,
                 )
                 group_frame.grid(
                     row=0,
@@ -355,8 +360,7 @@ class EditDataDialog:
                     group_frame,
                     text=label,
                     font=(FONT_FAMILY, 8, "bold"),
-                    # fg=WHITE if not is_empty else ENTERPRISE_MUTED,
-                    fg="black",
+                    fg=(WHITE if self.mode == "new" else "black"),
                     bg=GROUP_HEADER if not is_empty else GROUP_HEADER_EMPTY,
                     anchor="center",
                     padx=7,
@@ -507,7 +511,15 @@ class EditDataDialog:
                     "highlightthickness": 0,
                     "justify": "left",
                 }
-                if input_type == "Number Field":
+                if input_type == "Number Field" or (
+                    self.numeric_popup
+                    and field_definition["label"] not in {
+                        "Crack Def",
+                        "Crack Name",
+                        "Template Name",
+                        "DARWIN crack type",
+                    }
+                ):
                     entry_options["validate"] = "key"
                     entry_options["validatecommand"] = (
                         self.window.register(self.validate_number_input),
@@ -589,6 +601,13 @@ class EditDataDialog:
             proposed_value,
         ) is not None
 
+    def is_valid_numeric_value(self, value):
+        """Validate a completed numeric value for Add New popup fields."""
+        return bool(value.strip()) and re.fullmatch(
+            r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?",
+            value.strip(),
+        ) is not None
+
 
     def record_label_update(self, status):
         if hasattr(self, "record_label"):
@@ -663,6 +682,32 @@ class EditDataDialog:
 
 
     def apply(self):
+        if self.numeric_popup:
+            invalid = []
+            string_fields = {
+                "Crack Def", "Crack Name", "Template Name",
+                "DARWIN crack type",
+            }
+            for row_number, row_entries in enumerate(self.entries, start=1):
+                for definition, entry in zip(self.field_definitions, row_entries):
+                    value = entry.get().strip()
+                    if (
+                        definition["label"] not in string_fields
+                        and value
+                        and not self.is_valid_numeric_value(value)
+                    ):
+                        invalid.append(
+                            f"Row {row_number}: {definition['label']}"
+                        )
+            if invalid:
+                messagebox.showwarning(
+                    "Invalid Numeric Values",
+                    "Enter an integer or decimal number in these fields.\n\n"
+                    + "\n".join(invalid),
+                    parent=self.window,
+                )
+                return
+
         rows = []
         for row_entries in self.entries:
             values = [entry.get().strip() for entry in row_entries]

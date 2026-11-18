@@ -214,7 +214,7 @@ class ModulePage(tk.Frame):
             anchor="nw",
         )
 
-        for group in self.header_groups:
+        for group_index, group in enumerate(self.header_groups):
             start = group["start"]
             span = group["span"]
             width = sum(self.column_widths[start:start + span])
@@ -231,6 +231,12 @@ class ModulePage(tk.Frame):
                 padx=8,
                 pady=5,
             ).place(x=offset, y=0, width=width, height=28)
+            if group_index:
+                tk.Frame(
+                    group_surface,
+                    bg=ENTERPRISE_BORDER,
+                    width=2,
+                ).place(x=offset - 1, y=0, width=2, height=28)
 
         self.group_header = group_header
 
