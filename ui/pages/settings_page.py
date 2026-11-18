@@ -238,6 +238,7 @@ class SettingsPage(tk.Frame):
             "General project and workspace information.",
             BASIC_SETTINGS,
         )
+        self.create_configuration_section(sections)
         self.create_section(
             sections,
             "Advanced Settings",
@@ -258,12 +259,10 @@ class SettingsPage(tk.Frame):
         ).pack(side="right", padx=(8, 0))
         self.create_button(
             actions,
-            # "Apply Settings",
-            "Go to SAW Configuration",
+            "Apply Settings",
             WHITE,
             ENTERPRISE_BLUE,
-            # self.apply_settings,
-            self.go_to_configuration,
+            self.apply_settings,
         ).pack(side="right")
 
 
@@ -359,6 +358,9 @@ class SettingsPage(tk.Frame):
             if default_value:
                 entry.insert(0, default_value)
             self.settings_fields[setting_name] = entry
+            if field_definition.get("required"):
+                entry.bind("<KeyRelease>", self.update_configuration_enabled)
+                entry.bind("<FocusOut>", self.update_configuration_enabled)
 
             if input_type == "File Picker":
                 picker_type = field_definition.get("picker_type", "file")
@@ -375,6 +377,56 @@ class SettingsPage(tk.Frame):
                     ENTERPRISE_BLUE_LIGHT,
                     command,
                 ).grid(row=row_index, column=2, padx=(10, 0), pady=5)
+
+    def create_configuration_section(self, parent):
+        section = tk.Frame(
+            parent,
+            bg=WHITE,
+            highlightbackground=ENTERPRISE_BORDER,
+            highlightthickness=1,
+        )
+        section.pack(fill="x", pady=(0, 14))
+        heading = tk.Frame(section, bg=WHITE)
+        heading.pack(fill="x", padx=16, pady=(13, 8))
+        tk.Label(
+            heading,
+            text="SAW Configuration",
+            font=(FONT_FAMILY, 12, "bold"),
+            fg=ENTERPRISE_TEXT,
+            bg=WHITE,
+        ).pack(fill="x")
+        tk.Label(
+            heading,
+            text="Configure SAW tool locations and license information.",
+            font=(FONT_FAMILY, 8),
+            fg=ENTERPRISE_MUTED,
+            bg=WHITE,
+        ).pack(fill="x", pady=(3, 0))
+        self.configuration_host = tk.Frame(section, bg=WHITE)
+        self.configuration_host.pack(fill="x")
+        from ui.dialogs.configuration_dialog import ConfigurationDialog
+        self.configuration = ConfigurationDialog(
+            self.winfo_toplevel(), self.app,
+            embedded_parent=self.configuration_host,
+        )
+        self.update_configuration_enabled()
+
+    def update_configuration_enabled(self, event=None):
+        """Keep SAW controls available only while every required path is valid."""
+        if not hasattr(self, "configuration_host"):
+            return
+        enabled = not self.validate_basic_paths()
+
+        def set_controls(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, (tk.Entry, tk.Button, ttk.Button)):
+                    try:
+                        child.configure(state="normal" if enabled else "disabled")
+                    except tk.TclError:
+                        pass
+                set_controls(child)
+
+        set_controls(self.configuration_host)
 
 
     def create_input_control(self, parent, input_type):
@@ -432,6 +484,7 @@ class SettingsPage(tk.Frame):
         if path:
             entry.delete(0, "end")
             entry.insert(0, path)
+            self.update_configuration_enabled()
 
 
     def browse_folder(self, entry):
@@ -442,6 +495,7 @@ class SettingsPage(tk.Frame):
         if path:
             entry.delete(0, "end")
             entry.insert(0, path)
+            self.update_configuration_enabled()
 
     def get_basic_path_values(self):
         """Return the six mandatory Basic Settings paths."""
@@ -570,10 +624,10 @@ class SettingsPage(tk.Frame):
         
         messagebox.showinfo(
             "Settings Applied",
-            "All six mandatory paths have been verified.\n\n"
-            "You can now access the SAW configuration tab.",
+            "Application settings have been applied.",
             parent=self.winfo_toplevel(),
         )
+        self.update_configuration_enabled()
         return True
     
     def go_to_configuration(self):
@@ -591,184 +645,17 @@ class SettingsPage(tk.Frame):
         
 
 class CombinedSettingsPage(tk.Frame):
-    """Application Settings and SAW configuration with mandatory path validation."""
+    """Single Application Settings page with embedded SAW configuration."""
 
     def __init__(self, parent, app, initial_tab="settings"):
         super().__init__(parent, bg=BACKGROUND)
         
-        #1. Create Notebook
-        self.notebook = ttk.Notebook(self)
-        self.notebook.pack(
-            fill="both", 
-            expand=True, 
-            padx=10, 
-            pady=10,
-            )
+        self.application_settings = SettingsPage(self, app)
+        self.application_settings.pack(fill="both", expand=True)
+        self.configuration = self.application_settings.configuration
+        self.saw_settings_page = self
 
-        #2. Create two tabs
-        app_tab = tk.Frame(
-            self.notebook, 
-            bg=BACKGROUND,
-            )
-        
-        
-        config_tab = tk.Frame(
-            self.notebook, 
-            bg=BACKGROUND,
-            )
-        
-        #3. Add tabs to Notebook
-        self.notebook.add(
-            app_tab, 
-            text="1. Application Settings",
-            )
-        
-        self.notebook.add(
-            config_tab, 
-            text="2. SAW Configuration",
-            )
-        
-        ####
-        self.notebook.bind(
-            "<Button-1>",
-            self.on_locked_tab_click,
-            add="+",
-        )
-        
-        # NEW: Lock SAW configuration initially
-        self.notebook.tab(
-            config_tab,
-            state="disabled",
-        )
-
-        #4. Load existing application settings
-        self.application_settings = SettingsPage(
-            app_tab, 
-            app,
-            )
-        self.application_settings.pack(
-            fill="both", 
-            expand=True,
-            )
-        
-        # NEW: Allow the first page to unlock the second page
-        self.application_settings.on_settings_verified = (
-            self.unlock_configuration
-        )
-        
-        #5. Load existing SAW configuration
-        from ui.dialogs.configuration_dialog import ConfigurationDialog
-        self.configuration = ConfigurationDialog(
-            parent, 
-            app, 
-            embedded_parent=config_tab,
-            )
-        
-        # for validation
-        # Always begin with Application settings
-        self.notebook.select(0)
-        
-        # Check access whenever a tab changes
-        self.notebook.bind(
-            "<<NotebookTabChanges>>",
-            self.on_tab_changed,
-        )
-        # Do not bypass validation via initial_tab
-        if initial_tab == "configuration":
-            self.select_tab("configuration")
-            
-    def can_open_configuration(self):
-        """Confirm paths are applied and remain valid."""
-        
-        settings = self.application_settings
-        errors = settings.validate_basic_paths()
-        
-        if errors:
-            return False, (
-                "The following paths are invalid.\n\n"
-                + "\n".join(errors)
-            )
-            
-        if (
-            settings._applied_basic_paths
-            != settings.get_basic_path_values()
-        ):
-            return False, (
-                "Please click Apply Settings after "
-                "entering or modifying the six "
-                "mandatory paths."
-            )
-        return True, ""
-    
-    def on_tab_changed(self, event=None):
-        """Block Configuration tab if paths are invalid."""
-        
-        if self.notebook.index("current") == 0:
-            self.notebook.tab(1, state="disabled")
-            return
-        
-        if self.notebook.index("current") != 1:
-            return
-        
-        allowed, reason = self.can_open_configuration()
-        
-        if not allowed:
-            self.notebook.select(0)
-            
-            messagebox.showerror(
-                "Invalid Application Settings Path",
-                reason
-                + "\n\nSAW Configuration cannot be opened "
-                "until Application Settings are valid.",
-                parent=self.winfo_toplevel(),
-            )
-            
     def select_tab(self, name):
-        """Select a tab with mandatory validation."""
-        
-        if name == "configuration":
-            # Validation runs via NotbookTabChanged
-            self.notebook.select(1)
+        """Compatibility for existing callers; settings now share one page."""
+        self.application_settings.update_configuration_enabled()
             
-        else:
-            self.notebook.select(0)
-            
-    def unlock_configuration(self):
-        """Enable and open SAW configuration after verification."""
-        
-        allowed, reason = self.can_open_configuration()
-        
-        if not allowed:
-            messagebox.showerror(
-                "Application Settings Not Verified",
-                reason,
-                parent=self.winfo_toplevel(),
-            )
-            return
-        
-        self.notebook.tab(1, state="normal")
-        self.notebook.select(1)
-        
-    def on_locked_tab_click(self, event):
-        """Warn the user when accessing a locked tab."""
-        
-        try:
-            clicked_tab = self.notebook.index(
-                f"@{event.x},{event.y}"
-            )
-        except tk.TclError:
-            return
-        
-        if (
-            clicked_tab == 1
-            and self.notebook.tab(1, "state") == "disabled"
-        ):
-            messagebox.showerror(
-                "Application Settings Not Verified",
-                "The six mandatory paths in Application Settings "
-                "have not been verified.\n\n"
-                "Please enter valid paths and click "
-                "'Go to SAW Configuration' before proceeding.",
-                parent=self.winfo_toplevel(),
-            )
-            return "break"
