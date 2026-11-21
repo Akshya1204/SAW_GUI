@@ -80,6 +80,7 @@ class ModulePage(tk.Frame):
         tree_container.grid_columnconfigure(0, weight=1)
 
         y_scroll = ttk.Scrollbar(tree_container, orient="vertical")
+        self.vertical_scrollbar = y_scroll
         x_scroll = ttk.Scrollbar(tree_container, orient="horizontal")
         self.horizontal_scrollbar = x_scroll
 
@@ -112,7 +113,7 @@ class ModulePage(tk.Frame):
             show="headings",
             selectmode="browse",
             style="SAW.Treeview",
-            yscrollcommand=y_scroll.set,
+            yscrollcommand=self.sync_vertical_scroll,
             xscrollcommand=self.sync_horizontal_scroll,
         )
         y_scroll.config(command=self.current_tree.yview)
@@ -248,6 +249,9 @@ class ModulePage(tk.Frame):
             self.group_header.xview_moveto(first)
         if hasattr(self, "horizontal_scrollbar"):
             self.horizontal_scrollbar.set(first, last)
+        refresh_cells = getattr(self, "refresh_file_cell_overlays", None)
+        if callable(refresh_cells):
+            refresh_cells()
 
 
     def create_action_button(self, parent, text, foreground, background, command):
@@ -283,6 +287,16 @@ class ModulePage(tk.Frame):
             self.current_tree.insert(
                 "", "end", values=values[:len(self.column_headers)]
             )
+        refresh_cells = getattr(self, "refresh_file_cell_overlays", None)
+        if callable(refresh_cells):
+            refresh_cells()
+
+
+    def sync_vertical_scroll(self, first, last):
+        self.vertical_scrollbar.set(first, last)
+        refresh_cells = getattr(self, "refresh_file_cell_overlays", None)
+        if callable(refresh_cells):
+            refresh_cells()
 
 
     def open_add_new(self):
@@ -320,6 +334,13 @@ class ModulePage(tk.Frame):
             self.close_editor,
             self.header_label or self.module_name,
             self.header_groups,
+            material_path_getter=(
+                lambda: (getattr(self.app, "settings_values", {}) or {}).get(
+                    "material_path", ""
+                )
+                if self.module_name == "Crack Prop Material"
+                else None
+            ),
         )
         self.app.child_windows["edit"] = dialog.window
 

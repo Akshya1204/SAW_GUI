@@ -34,7 +34,7 @@ class BasicSettingsDependencyTests(unittest.TestCase):
         self.assertTrue(all(field.get("required") for field in CONFIGURATION_FIELDS))
 
     def test_all_valid_existing_paths_enable_configuration(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory)
             python = root / "python.exe"
             python.touch()

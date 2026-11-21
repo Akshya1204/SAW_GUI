@@ -2,9 +2,18 @@
 
 import re
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from ui.widgets.mousewheel import bind_mousewheel
+from ui.widgets.crack_prop_uploader import select_crack_prop_file
+from utils.crack_prop_paths import (
+    CRACK_PROP_FILE_COLUMNS,
+    FILE_NOT_FOUND,
+    file_path_colors,
+    file_state_colors,
+    validate_crack_prop_file,
+)
 from utils.constants import *
 
 
@@ -20,6 +29,7 @@ class EditDataDialog:
         on_close,
         form_header=None,
         header_groups=None,
+        material_path_getter=None,
     ):
         self.module_name = module_name
         self.form_header = form_header or module_name
@@ -30,6 +40,7 @@ class EditDataDialog:
         self.numeric_popup = (
             module_name == "Crack Geom Material" and mode == "new"
         )
+        self.material_path_getter = material_path_getter
         self.on_save = on_save
         self.on_close = on_close
         self.header_groups = tuple(header_groups or ())
@@ -492,6 +503,23 @@ class EditDataDialog:
                 )
                 if value:
                     entry.insert(0, value)
+                if (
+                    self.module_name == "Crack Prop Material"
+                    and column_index in {
+                        index for index, _, _ in CRACK_PROP_FILE_COLUMNS
+                    }
+                ):
+                    entry.configure(state="readonly")
+                    entry.bind(
+                        "<Button-1>",
+                        lambda event, widget=entry:
+                        self.open_file_picker_from_cell(widget),
+                    )
+                    cell_frame.bind(
+                        "<Button-1>",
+                        lambda event, widget=entry:
+                        self.open_file_picker_from_cell(widget),
+                    )
                 self.create_file_button(
                     control_frame,
                     entry,
@@ -533,17 +561,46 @@ class EditDataDialog:
                 self.bind_text_entry(entry, row_bg)
 
             entry._cell_frame = cell_frame
+            entry._column_index = column_index
+            entry._row_index = row_number - 1
             entry.bind(
                 "<Return>",
                 lambda event, widget=entry: self.focus_next(widget),
             )
             row_entries.append(entry)
 
+            if self.module_name == "Crack Prop Material" and column_index < 3:
+                entry.bind(
+                    "<KeyRelease>",
+                    lambda event, cells=row_entries:
+                    self.on_crack_prop_source_changed(cells),
+                    add="+",
+                )
+
         self.entries.append(row_entries)
         self.row_labels.append(number_label)
         if self.scroll_canvas is not None:
             bind_mousewheel(grid, self.scroll_canvas.yview_scroll)
         self.record_label_update("New row added - enter the required values")
+        if self.module_name == "Crack Prop Material":
+            self.regenerate_crack_prop_row(
+                row_entries,
+                replace=self.mode == "new",
+            )
+            snapshot = tuple(entry.get().strip() for entry in row_entries[:3])
+            for entry in row_entries[:3]:
+                entry._path_source_snapshot = snapshot
+
+
+    def on_crack_prop_source_changed(self, row_entries):
+        """Regenerate paths only when a source value actually changed."""
+        current = tuple(entry.get().strip() for entry in row_entries[:3])
+        previous = getattr(row_entries[0], "_path_source_snapshot", None)
+        if current == previous:
+            return
+        self.regenerate_crack_prop_row(row_entries, replace=True)
+        for entry in row_entries[:3]:
+            entry._path_source_snapshot = current
 
 
     def bind_text_entry(self, entry, row_bg):
@@ -578,7 +635,19 @@ class EditDataDialog:
 
 
     def select_path(self, entry, picker_type):
-        if picker_type == "folder":
+        if (
+            self.module_name == "Crack Prop Material"
+            and entry._column_index in {
+                index for index, _, _ in CRACK_PROP_FILE_COLUMNS
+            }
+        ):
+            row = self.entries[entry._row_index]
+            path = select_crack_prop_file(
+                self.window,
+                row[0].get().strip(),
+                entry._column_index,
+            )
+        elif picker_type == "folder":
             path = filedialog.askdirectory(
                 parent=self.window,
                 title="Select a folder",
@@ -589,8 +658,82 @@ class EditDataDialog:
                 title="Select a file",
             )
         if path:
-            entry.delete(0, "end")
-            entry.insert(0, path)
+            self.set_entry_value(entry, path)
+            if (
+                self.module_name == "Crack Prop Material"
+                and entry._column_index in {
+                    index for index, _, _ in CRACK_PROP_FILE_COLUMNS
+                }
+            ):
+                self.set_file_path_status(entry, path)
+
+    def open_file_picker_from_cell(self, entry):
+        self.select_path(entry, "file")
+        return "break"
+
+    @staticmethod
+    def set_entry_value(entry, value):
+        read_only = entry.cget("state") == "readonly"
+        if read_only:
+            entry.configure(state="normal")
+        entry.delete(0, "end")
+        entry.insert(0, value)
+        if read_only:
+            entry.configure(state="readonly")
+
+    def set_file_path_status(self, entry, path):
+        row_index = getattr(entry, "_row_index", None)
+        column_index = getattr(entry, "_column_index", None)
+        material = ""
+        if row_index is not None and row_index < len(self.entries):
+            material = self.entries[row_index][0].get().strip()
+        background, foreground = file_state_colors(
+            path, material, column_index
+        )
+        entry._file_status_bg = background
+        entry.configure(
+            bg=background,
+            fg=foreground,
+            justify="center" if path == "Not found" else "left",
+        )
+        entry._cell_frame.configure(bg=background)
+
+    def regenerate_crack_prop_row(self, row_entries, replace=False):
+        """Populate expected file paths for this row and update cell status."""
+        if self.module_name != "Crack Prop Material":
+            return
+        from utils.crack_prop_paths import build_crack_prop_file_paths
+
+        material_path = (
+            self.material_path_getter()
+            if self.material_path_getter is not None
+            else ""
+        )
+        row_values = [entry.get().strip() for entry in row_entries[:3]]
+        paths = build_crack_prop_file_paths(material_path, row_values)
+        for path, (column_index, _, _) in zip(paths, CRACK_PROP_FILE_COLUMNS):
+            entry = row_entries[column_index]
+            current = entry.get().strip()
+            expected_exists = (
+                path != FILE_NOT_FOUND
+                and file_path_colors(path, row_values[0], column_index)[0]
+                == SUCCESS
+            )
+            if replace:
+                display_value = path if expected_exists else FILE_NOT_FOUND
+            elif (
+                current != FILE_NOT_FOUND
+                and validate_crack_prop_file(
+                    current, row_values[0], column_index
+                ) is None
+            ):
+                # A stored valid path represents a previously accepted cell.
+                # Do not recheck disk presence just because the uploader opened.
+                display_value = current
+            else:
+                display_value = path if expected_exists else FILE_NOT_FOUND
+            self.set_entry_value(entry, display_value)
+            self.set_file_path_status(entry, display_value)
 
 
     def validate_number_input(self, proposed_value):
@@ -623,7 +766,11 @@ class EditDataDialog:
 
     def focus_out(self, widget, original_bg):
         widget._cell_frame.configure(bg=CELL_BORDER, padx=1, pady=1)
-        widget.configure(bg=original_bg)
+        status_bg = getattr(widget, "_file_status_bg", None)
+        if status_bg:
+            widget.configure(bg=status_bg, fg=WHITE)
+        else:
+            widget.configure(bg=original_bg)
 
 
     def focus_next(self, widget):
@@ -658,6 +805,8 @@ class EditDataDialog:
 
         for index, row in enumerate(self.entries):
             row_number = index + 1
+            for widget in row:
+                widget._row_index = index
             self.row_labels[index].configure(text=str(row_number))
             self.row_labels[index].grid_configure(
                 row=row_number + self.header_row_count - 1
@@ -710,7 +859,10 @@ class EditDataDialog:
 
         rows = []
         for row_entries in self.entries:
-            values = [entry.get().strip() for entry in row_entries]
+            values = []
+            for entry in row_entries:
+                value = entry.get().strip()
+                values.append(value)
             if any(values):
                 rows.append(values)
 
