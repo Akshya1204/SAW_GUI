@@ -338,7 +338,7 @@ class ModulePage(tk.Frame):
                 lambda: (getattr(self.app, "settings_values", {}) or {}).get(
                     "material_path", ""
                 )
-                if self.module_name == "Crack Prop Material"
+                if self.module_name in {"Crack Prop Material", "FE Material"}
                 else None
             ),
         )
