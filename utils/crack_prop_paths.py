@@ -3,15 +3,15 @@
 from pathlib import Path
 
 try:
-    from utils.constants import DANGER, SUCCESS
+    from utils.constants import DANGER, SUCCESS, WHITE
 except ModuleNotFoundError as error:
     # Support `python utils/crack_prop_paths.py` as well as package imports.
     if error.name != "utils":
         raise
-    from constants import DANGER, SUCCESS
+    from constants import DANGER, SUCCESS, WHITE
 
 
-FILE_TEXT_COLOR = "black"
+FILE_TEXT_COLOR = WHITE
 
 
 CRACK_PROP_FILE_COLUMNS = (

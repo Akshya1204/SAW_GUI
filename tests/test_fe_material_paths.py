@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from utils.constants import DANGER, SUCCESS
+from utils.constants import DANGER, SUCCESS, WHITE
 from utils.crack_prop_paths import FILE_NOT_FOUND
 from utils.fe_material_paths import (
     build_fe_item_file_path,
@@ -68,11 +68,11 @@ class FEMaterialPathTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIsNotNone(validate_fe_item_file(name, "ABC123"))
 
-    def test_cell_colors_are_red_or_green_with_black_text(self):
-        self.assertEqual(fe_item_file_colors(FILE_NOT_FOUND, "ABC123"), (DANGER, "black"))
-        self.assertEqual(fe_item_file_colors("C:/missing/ABC123.item", "ABC123"), (SUCCESS, "black"))
+    def test_cell_colors_are_red_or_green_with_white_text(self):
+        self.assertEqual(fe_item_file_colors(FILE_NOT_FOUND, "ABC123"), (DANGER, WHITE))
+        self.assertEqual(fe_item_file_colors("C:/missing/ABC123.item", "ABC123"), (SUCCESS, WHITE))
 
-    def test_edit_dialog_missing_cell_is_centered_red_and_black(self):
+    def test_edit_dialog_missing_cell_is_centered_red_and_white(self):
         dialog = object.__new__(EditDataDialog)
         dialog.module_name = "FE Material"
         entries = [FakeEntry("Material"), FakeEntry("ABC123"), FakeEntry("v1"), FakeEntry("user"), FakeEntry(FILE_NOT_FOUND)]
@@ -81,7 +81,7 @@ class FEMaterialPathTests(unittest.TestCase):
         entries[4]._column_index = 4
         dialog.set_fe_item_file_status(entries[4], FILE_NOT_FOUND)
         self.assertEqual(entries[4].options["bg"], DANGER)
-        self.assertEqual(entries[4].options["fg"], "black")
+        self.assertEqual(entries[4].options["fg"], WHITE)
         self.assertEqual(entries[4].options["justify"], "center")
 
     def test_dialog_populates_existing_expected_file_and_preserves_manual_path(self):

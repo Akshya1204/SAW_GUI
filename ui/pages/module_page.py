@@ -341,6 +341,13 @@ class ModulePage(tk.Frame):
                 if self.module_name in {"Crack Prop Material", "FE Material"}
                 else None
             ),
+            template_path_getter=(
+                lambda: (getattr(self.app, "settings_values", {}) or {}).get(
+                    "template_path", ""
+                )
+                if self.module_name == "Template Definition"
+                else None
+            ),
         )
         self.app.child_windows["edit"] = dialog.window
 

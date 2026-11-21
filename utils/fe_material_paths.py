@@ -2,11 +2,11 @@
 
 from pathlib import Path
 
-from utils.constants import DANGER, SUCCESS
+from utils.constants import DANGER, SUCCESS, WHITE
 from utils.crack_prop_paths import FILE_NOT_FOUND
 
 FE_ITEM_FILE_COLUMN = 4
-FE_ITEM_TEXT_COLOR = "black"
+FE_ITEM_TEXT_COLOR = WHITE
 
 
 def build_fe_item_file_path(material_path, row):

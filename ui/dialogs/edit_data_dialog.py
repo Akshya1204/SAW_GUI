@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox, ttk
 from ui.widgets.mousewheel import bind_mousewheel
 from ui.widgets.crack_prop_uploader import select_crack_prop_file
 from ui.widgets.fe_material_uploader import select_fe_item_file
+from ui.widgets.template_file_uploader import select_template_file
 from utils.crack_prop_paths import (
     CRACK_PROP_FILE_COLUMNS,
     FILE_NOT_FOUND,
@@ -21,6 +22,12 @@ from utils.fe_material_paths import (
     build_fe_item_file_path,
     fe_item_file_colors,
     validate_fe_item_file,
+)
+from utils.template_definition_paths import (
+    TEMPLATE_FILE_COLUMNS,
+    TEMPLATE_FILE_NOT_FOUND,
+    build_template_file_paths,
+    template_file_colors,
 )
 
 
@@ -37,6 +44,7 @@ class EditDataDialog:
         form_header=None,
         header_groups=None,
         material_path_getter=None,
+        template_path_getter=None,
     ):
         self.module_name = module_name
         self.form_header = form_header or module_name
@@ -48,6 +56,7 @@ class EditDataDialog:
             module_name == "Crack Geom Material" and mode == "new"
         )
         self.material_path_getter = material_path_getter
+        self.template_path_getter = template_path_getter
         self.on_save = on_save
         self.on_close = on_close
         self.header_groups = tuple(header_groups or ())
@@ -539,6 +548,21 @@ class EditDataDialog:
                         lambda event, widget=entry:
                         self.open_file_picker_from_cell(widget),
                     )
+                elif (
+                    self.module_name == "Template Definition"
+                    and column_index in {index for index, _ in TEMPLATE_FILE_COLUMNS}
+                ):
+                    entry.configure(state="readonly")
+                    entry.bind(
+                        "<Button-1>",
+                        lambda event, widget=entry:
+                        self.open_file_picker_from_cell(widget),
+                    )
+                    cell_frame.bind(
+                        "<Button-1>",
+                        lambda event, widget=entry:
+                        self.open_file_picker_from_cell(widget),
+                    )
                 self.create_file_button(
                     control_frame,
                     entry,
@@ -602,6 +626,13 @@ class EditDataDialog:
                     self.on_fe_material_source_changed(cells),
                     add="+",
                 )
+            if self.module_name == "Template Definition" and column_index in (0, 1, 2):
+                entry.bind(
+                    "<KeyRelease>",
+                    lambda event, cells=row_entries:
+                    self.on_template_source_changed(cells),
+                    add="+",
+                )
 
         self.entries.append(row_entries)
         self.row_labels.append(number_label)
@@ -621,6 +652,11 @@ class EditDataDialog:
             snapshot = tuple(entry.get().strip() for entry in row_entries[1:4])
             for entry in row_entries[:4]:
                 entry._fe_path_source_snapshot = snapshot
+        elif self.module_name == "Template Definition":
+            self.regenerate_template_definition_row(row_entries)
+            snapshot = tuple(entry.get().strip() for entry in row_entries[:3])
+            for entry in row_entries:
+                entry._template_path_source_snapshot = snapshot
 
 
     def on_crack_prop_source_changed(self, row_entries):
@@ -683,6 +719,47 @@ class EditDataDialog:
         self.set_fe_item_file_status(entry, display)
 
 
+    def on_template_source_changed(self, row_entries):
+        current = tuple(entry.get().strip() for entry in row_entries[:3])
+        previous = getattr(row_entries[0], "_template_path_source_snapshot", None)
+        if current == previous:
+            return
+        self.regenerate_template_definition_row(row_entries, previous_sources=previous)
+        for entry in row_entries:
+            entry._template_path_source_snapshot = current
+
+
+    def set_template_file_status(self, entry, value):
+        background, foreground = template_file_colors(value)
+        entry._file_status_bg = background
+        entry.configure(
+            readonlybackground=background,
+            bg=background,
+            fg=foreground,
+            justify="center" if value == TEMPLATE_FILE_NOT_FOUND else "left",
+        )
+        entry._cell_frame.configure(bg=background)
+
+
+    def regenerate_template_definition_row(self, row_entries, previous_sources=None):
+        if self.module_name != "Template Definition":
+            return
+        template_path = self.template_path_getter() if self.template_path_getter else ""
+        row_values = [entry.get().strip() for entry in row_entries[:3]]
+        old_paths = build_template_file_paths(template_path, [*previous_sources]) if previous_sources else (TEMPLATE_FILE_NOT_FOUND,) * len(TEMPLATE_FILE_COLUMNS)
+        paths = build_template_file_paths(template_path, row_values)
+        for position, (column_index, _) in enumerate(TEMPLATE_FILE_COLUMNS):
+            entry = row_entries[column_index]
+            current = entry.get().strip()
+            if not current or current == TEMPLATE_FILE_NOT_FOUND or current == old_paths[position]:
+                expected = paths[position]
+                display = expected if expected != TEMPLATE_FILE_NOT_FOUND and Path(expected).is_file() else TEMPLATE_FILE_NOT_FOUND
+            else:
+                display = current
+            self.set_entry_value(entry, display)
+            self.set_template_file_status(entry, display)
+
+
     def bind_text_entry(self, entry, row_bg):
         entry.bind(
             "<FocusIn>",
@@ -733,6 +810,19 @@ class EditDataDialog:
             if path:
                 self.set_entry_value(entry, path)
                 self.set_fe_item_file_status(entry, path)
+        elif (
+            self.module_name == "Template Definition"
+            and entry._column_index in {index for index, _ in TEMPLATE_FILE_COLUMNS}
+        ):
+            row = self.entries[entry._row_index]
+            row_values = [cell.get().strip() for cell in row[:3]]
+            template_path = self.template_path_getter() if self.template_path_getter else ""
+            path = select_template_file(
+                self.window, template_path, row_values, entry._column_index
+            )
+            if path:
+                self.set_entry_value(entry, path)
+                self.set_template_file_status(entry, path)
         elif picker_type == "folder":
             path = filedialog.askdirectory(
                 parent=self.window,
@@ -744,7 +834,10 @@ class EditDataDialog:
                 title="Select a file",
             )
         if path:
-            if not (self.module_name == "FE Material" and entry._column_index == FE_ITEM_FILE_COLUMN):
+            if not (
+                (self.module_name == "FE Material" and entry._column_index == FE_ITEM_FILE_COLUMN)
+                or (self.module_name == "Template Definition" and entry._column_index in {index for index, _ in TEMPLATE_FILE_COLUMNS})
+            ):
                 self.set_entry_value(entry, path)
             if (
                 self.module_name == "Crack Prop Material"
@@ -779,6 +872,7 @@ class EditDataDialog:
         )
         entry._file_status_bg = background
         entry.configure(
+            readonlybackground=background,
             bg=background,
             fg=foreground,
             justify="center" if path == "Not found" else "left",

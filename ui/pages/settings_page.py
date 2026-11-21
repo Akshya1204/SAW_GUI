@@ -612,6 +612,7 @@ class SettingsPage(tk.Frame):
         }
         
         old_material_path = self.app.settings_values.get("material_path", "")
+        old_template_path = self.app.settings_values.get("template_path", "")
 
         # Preserve existing SAW configuration values
         self.app.settings_values.update(settings_values)
@@ -625,6 +626,11 @@ class SettingsPage(tk.Frame):
             refresh_paths = getattr(current_page, "refresh_generated_paths", None)
             if callable(refresh_paths):
                 refresh_paths(old_material_path=old_material_path)
+        if old_template_path != settings_values.get("template_path", ""):
+            current_page = getattr(self.app, "current_page", None)
+            refresh_paths = getattr(current_page, "refresh_generated_paths", None)
+            if callable(refresh_paths):
+                refresh_paths(old_template_path=old_template_path)
         
         #4. Record the six successfully applied paths
         self._applied_basic_paths = self.get_basic_path_values()
